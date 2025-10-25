@@ -50,6 +50,11 @@
             75% { transform: translateX(10px); }
         }
         .shake { animation: shake 0.5s ease-in-out; }
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+        .pulse { animation: pulse 2s infinite; }
     </style>
 </head>
 <body>
@@ -57,8 +62,6 @@
 
     <script type="text/babel">
         const { useState, useEffect } = React;
-
-        // 🔥 CONFIGURAÇÃO DO FIREBASE - SUBSTITUA COM SUAS CREDENCIAIS!
 
         const firebaseConfig = {
             apiKey: "AIzaSyB58M_OFgdEbsOr8u-fmw_H6Ws06o8pTkc",
@@ -70,7 +73,6 @@
             appId: "1:827420236227:web:940dd63b8893e75d2e8576"
         };
         
-        // Inicializa Firebase
         if (!firebase.apps.length) {
             firebase.initializeApp(firebaseConfig);
         }
@@ -98,6 +100,26 @@
                 <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
                 </svg>
+            ),
+            CreditCard: (props) => (
+                <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/>
+                </svg>
+            ),
+            DollarSign: (props) => (
+                <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                </svg>
+            ),
+            Smartphone: (props) => (
+                <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/>
+                </svg>
+            ),
+            X: (props) => (
+                <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
             )
         };
 
@@ -107,13 +129,16 @@
             const [selectedCategory, setSelectedCategory] = useState('todos');
             const [tableNumber, setTableNumber] = useState('');
             const [customerName, setCustomerName] = useState('');
+            const [paymentMethod, setPaymentMethod] = useState('');
+            const [cardType, setCardType] = useState('');
+            const [showCardTypeModal, setShowCardTypeModal] = useState(false);
             const [showSuccess, setShowSuccess] = useState(false);
             const [orderTicket, setOrderTicket] = useState(null);
             const [nameError, setNameError] = useState(false);
             const [tableError, setTableError] = useState(false);
+            const [paymentError, setPaymentError] = useState(false);
 
             useEffect(() => {
-                // 🔥 Escuta mudanças no menu em tempo real
                 const menuRef = database.ref('menu-items');
                 menuRef.on('value', (snapshot) => {
                     const data = snapshot.val();
@@ -160,9 +185,33 @@
                 return currentOrder.reduce((sum, item) => sum + (item.price * item.quantity), 0);
             };
 
+            const handlePaymentMethodSelect = (method) => {
+                if (method === 'cartao') {
+                    setShowCardTypeModal(true);
+                } else {
+                    setPaymentMethod(method);
+                    setCardType('');
+                    setPaymentError(false);
+                }
+            };
+
+            const handleCardTypeSelect = (type) => {
+                setPaymentMethod('cartao');
+                setCardType(type);
+                setShowCardTypeModal(false);
+                setPaymentError(false);
+            };
+
+            const paymentMethods = [
+                { id: 'dinheiro', name: 'Dinheiro', icon: Icons.DollarSign, color: 'green' },
+                { id: 'cartao', name: 'Cartão', icon: Icons.CreditCard, color: 'blue' },
+                { id: 'pix', name: 'PIX', icon: Icons.Smartphone, color: 'purple' }
+            ];
+
             const finalizeOrder = async () => {
                 setNameError(false);
                 setTableError(false);
+                setPaymentError(false);
 
                 if (currentOrder.length === 0) {
                     alert('⚠️ Adicione itens ao pedido!');
@@ -182,12 +231,26 @@
                     window.scrollTo({ top: 0, behavior: 'smooth' });
                     return;
                 }
+
+                if (!paymentMethod) {
+                    setPaymentError(true);
+                    alert('⚠️ Por favor, escolha a FORMA DE PAGAMENTO!');
+                    return;
+                }
+
+                if (paymentMethod === 'cartao' && !cardType) {
+                    setPaymentError(true);
+                    alert('⚠️ Por favor, escolha o TIPO DE CARTÃO!');
+                    return;
+                }
+                
+                const finalPaymentMethod = paymentMethod === 'cartao' ? `cartao-${cardType}` : paymentMethod;
                 
                 const newOrder = {
                     id: Date.now(),
                     items: [...currentOrder],
                     total: getTotal(),
-                    paymentMethod: 'pending',
+                    paymentMethod: finalPaymentMethod,
                     status: 'pendente',
                     time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
                     date: new Date().toLocaleDateString('pt-BR'),
@@ -197,12 +260,13 @@
                 };
 
                 try {
-                    // 🔥 Salva o pedido no Firebase
                     await database.ref('orders/' + newOrder.id).set(newOrder);
                     
                     setOrderTicket(newOrder);
                     setShowSuccess(true);
                     setCurrentOrder([]);
+                    setPaymentMethod('');
+                    setCardType('');
                     
                     setTimeout(() => {
                         setShowSuccess(false);
@@ -214,6 +278,16 @@
                     console.error('Erro ao enviar pedido:', error);
                     alert('❌ Erro ao enviar pedido. Tente novamente!');
                 }
+            };
+
+            const getPaymentMethodDisplay = (method) => {
+                const paymentMap = {
+                    'dinheiro': '💵 Dinheiro',
+                    'cartao-credito': '💳 Cartão Crédito',
+                    'cartao-debito': '💳 Cartão Débito',
+                    'pix': '📱 PIX'
+                };
+                return paymentMap[method] || method;
             };
 
             return (
@@ -231,6 +305,43 @@
                             </p>
                         </div>
                     </div>
+
+                    {showCardTypeModal && (
+                        <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+                            <div className="bg-white rounded-xl p-6 max-w-md w-full fade-in">
+                                <div className="text-center mb-6">
+                                    <Icons.CreditCard className="w-16 h-16 mx-auto mb-3 text-blue-600" />
+                                    <h2 className="text-2xl font-black text-gray-800 mb-1">Tipo de Cartão</h2>
+                                    <p className="text-sm text-gray-600">Escolha o tipo do seu cartão</p>
+                                </div>
+
+                                <div className="space-y-3">
+                                    <button
+                                        onClick={() => handleCardTypeSelect('credito')}
+                                        className="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-black py-4 rounded-lg transition-all shadow-lg flex items-center justify-center gap-3 text-lg"
+                                    >
+                                        <Icons.CreditCard className="w-6 h-6" />
+                                        CRÉDITO
+                                    </button>
+
+                                    <button
+                                        onClick={() => handleCardTypeSelect('debito')}
+                                        className="w-full bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-black py-4 rounded-lg transition-all shadow-lg flex items-center justify-center gap-3 text-lg"
+                                    >
+                                        <Icons.CreditCard className="w-6 h-6" />
+                                        DÉBITO
+                                    </button>
+
+                                    <button
+                                        onClick={() => setShowCardTypeModal(false)}
+                                        className="w-full bg-gray-200 hover:bg-gray-300 text-gray-700 font-black py-3 rounded-lg transition-all text-sm"
+                                    >
+                                        Cancelar
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {showSuccess && orderTicket && (
                         <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 p-2 backdrop-blur-sm">
@@ -260,6 +371,10 @@
                                         <div className="flex justify-between mb-1 text-xs">
                                             <span className="text-gray-600">👤 Nome:</span>
                                             <span className="font-bold text-gray-800">{orderTicket.customerName}</span>
+                                        </div>
+                                        <div className="flex justify-between mb-1 text-xs">
+                                            <span className="text-gray-600">💰 Pagamento:</span>
+                                            <span className="font-bold text-gray-800">{getPaymentMethodDisplay(orderTicket.paymentMethod)}</span>
                                         </div>
                                         <div className="flex justify-between text-xs">
                                             <span className="text-gray-600">🕐 Horário:</span>
@@ -319,7 +434,7 @@
                             <div className="lg:col-span-2 space-y-4">
                                 <div className={`bg-gradient-to-r from-red-600 via-black to-red-600 text-white rounded-lg shadow-lg p-6 border-4 ${(nameError || tableError) ? 'border-yellow-400 shake' : 'border-yellow-500'} backdrop-blur-sm bg-opacity-90`}>
                                     <div className="text-center mb-4">
-                                        <h2 className="text-3xl font-black mb-2">🍔 MONTE SEU PEDIDO 🍺</h2>
+                                        <h2 className="text-3xl font-black mb-2">📝 MONTE SEU PEDIDO 🍺</h2>
                                         <p className="text-yellow-400 font-bold">⚠️ Preencha seus dados abaixo (OBRIGATÓRIO):</p>
                                     </div>
                                     <div className="grid grid-cols-2 gap-3">
@@ -459,11 +574,45 @@
                                         </div>
 
                                         <div className="border-t-4 border-orange-300 pt-6">
-                                            <div className="flex justify-between items-center mb-6">
+                                            <div className="flex justify-between items-center mb-4">
                                                 <span className="text-2xl font-black text-gray-700">💰 TOTAL:</span>
                                                 <span className="text-4xl font-black text-orange-600">
                                                     R$ {getTotal().toFixed(2)}
                                                 </span>
+                                            </div>
+
+                                            <div className={`mb-6 ${paymentError ? 'shake' : ''}`}>
+                                                <h3 className="text-lg font-black text-gray-800 mb-3 flex items-center gap-2">
+                                                    💳 FORMA DE PAGAMENTO *
+                                                    {paymentError && <Icons.AlertCircle className="w-5 h-5 text-red-500" />}
+                                                </h3>
+                                                <div className="space-y-2">
+                                                    {paymentMethods.map(method => (
+                                                        <button
+                                                            key={method.id}
+                                                            onClick={() => handlePaymentMethodSelect(method.id)}
+                                                            className={`w-full py-3 rounded-lg font-black transition-all flex items-center justify-center gap-3 border-3 ${
+                                                                paymentMethod === method.id && (method.id !== 'cartao' || cardType)
+                                                                    ? `bg-${method.color}-500 text-white border-${method.color}-600 shadow-lg scale-105`
+                                                                    : `bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200`
+                                                            } ${paymentError ? 'border-red-500' : ''}`}
+                                                        >
+                                                            <method.icon className="w-6 h-6" />
+                                                            {method.name}
+                                                            {method.id === 'cartao' && cardType && (
+                                                                <span className="text-sm">
+                                                                    ({cardType === 'credito' ? 'Crédito' : 'Débito'})
+                                                                </span>
+                                                            )}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                                {paymentError && (
+                                                    <p className="text-red-500 text-xs mt-2 font-bold flex items-center gap-1">
+                                                        <Icons.AlertCircle className="w-3 h-3" />
+                                                        Escolha uma forma de pagamento!
+                                                    </p>
+                                                )}
                                             </div>
 
                                             <button
