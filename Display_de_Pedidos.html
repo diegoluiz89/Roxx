@@ -22,11 +22,6 @@
             50% { transform: translateY(-10px); }
         }
         .animate-bounce-custom { animation: bounce 2s infinite; }
-        @keyframes pulse {
-            0%, 100% { transform: scale(1); }
-            50% { transform: scale(1.05); }
-        }
-        .pulse-animate { animation: pulse 2s infinite; }
     </style>
 </head>
 <body>
@@ -34,7 +29,6 @@
     <script type="text/babel">
         const { useState, useEffect } = React;
 
-        // 🔥 FIREBASE CONFIG - SUBSTITUA COM SUAS CREDENCIAIS
         const firebaseConfig = {
             apiKey: "AIzaSyB58M_OFgdEbsOr8u-fmw_H6Ws06o8pTkc",
             authDomain: "roxx-music-bar.firebaseapp.com",
@@ -53,7 +47,6 @@
             const [currentTime, setCurrentTime] = useState(new Date());
 
             useEffect(() => {
-                // 🔥 Escuta pedidos em tempo real
                 const ordersRef = db.ref('orders');
                 ordersRef.on('value', (snapshot) => {
                     const data = snapshot.val();
@@ -119,7 +112,7 @@
                                         </div>
                                     ) : (
                                         readyOrders.map(order => (
-                                            <div key={order.id} className="bg-white rounded-xl p-6 text-center border-4 border-green-600 shadow-xl slide-in pulse-animate">
+                                            <div key={order.id} className="bg-white rounded-xl p-6 text-center border-4 border-green-600 shadow-xl slide-in">
                                                 <div className="text-green-600 text-8xl font-black mb-2">
                                                     #{order.ticketNumber}
                                                 </div>
