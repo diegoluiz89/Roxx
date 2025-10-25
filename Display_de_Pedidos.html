@@ -112,18 +112,37 @@
                                         </div>
                                     ) : (
                                         readyOrders.map(order => (
-                                            <div key={order.id} className="bg-white rounded-xl p-6 text-center border-4 border-green-600 shadow-xl slide-in">
-                                                <div className="text-green-600 text-8xl font-black mb-2">
-                                                    #{order.ticketNumber}
+                                            <div key={order.id} className="bg-white rounded-xl p-6 border-4 border-green-600 shadow-xl slide-in">
+                                                <div className="text-center mb-4">
+                                                    <div className="text-green-600 text-8xl font-black mb-2">
+                                                        #{order.ticketNumber}
+                                                    </div>
+                                                    <div className="text-gray-800 font-bold text-2xl mb-2">
+                                                        🪑 Mesa: {order.tableNumber}
+                                                    </div>
+                                                    <div className="text-gray-600 font-semibold text-lg">
+                                                        {order.customerName}
+                                                    </div>
+                                                    <div className="mt-3 text-sm text-gray-500">
+                                                        🕐 {order.time}
+                                                    </div>
                                                 </div>
-                                                <div className="text-gray-800 font-bold text-2xl mb-2">
-                                                    🪑 Mesa: {order.tableNumber}
-                                                </div>
-                                                <div className="text-gray-600 font-semibold text-lg">
-                                                    {order.customerName}
-                                                </div>
-                                                <div className="mt-3 text-sm text-gray-500">
-                                                    🕐 {order.time}
+                                                <div className="border-t-2 border-green-300 pt-3 mt-3">
+                                                    <div className="text-left">
+                                                        <div className="text-sm font-bold text-gray-700 mb-2">📋 Itens do Pedido:</div>
+                                                        {order.items.map((item, idx) => (
+                                                            <div key={idx} className="flex justify-between text-sm text-gray-700 mb-1">
+                                                                <span className="font-semibold">{item.quantity}x {item.name}</span>
+                                                                <span className="font-bold">R$ {(item.price * item.quantity).toFixed(2)}</span>
+                                                            </div>
+                                                        ))}
+                                                        <div className="flex justify-between items-center mt-2 pt-2 border-t-2 border-green-300">
+                                                            <span className="font-black text-gray-800">💰 Total:</span>
+                                                            <span className="text-2xl font-black text-green-600">
+                                                                R$ {order.total.toFixed(2)}
+                                                            </span>
+                                                        </div>
+                                                    </div>
                                                 </div>
                                             </div>
                                         ))
