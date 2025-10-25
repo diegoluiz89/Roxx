@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ROXX Music Bar - Admin</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+    <style>
+        body { margin: 0; padding: 0; font-family: 'Inter', sans-serif; background: #000; }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #1a1a1a; }
+        ::-webkit-scrollbar-thumb { background: #dc2626; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // 🔥 FIREBASE CONFIG - SUBSTITUA COM SUAS CREDENCIAIS
+        const firebaseConfig = {
+            apiKey: "AIzaSyB58M_OFgdEbsOr8u-fmw_H6Ws06o8pTkc",
+            authDomain: "roxx-music-bar.firebaseapp.com",
+            databaseURL: "https://roxx-music-bar-default-rtdb.firebaseio.com",
+            projectId: "roxx-music-bar",
+            storageBucket: "roxx-music-bar.firebasestorage.app",
+            messagingSenderId: "827420236227",
+            appId: "1:827420236227:web:940dd63b8893e75d2e8576"
+        };
+
+        if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+
+        const App = () => {
+            const [userRole, setUserRole] = useState(null);
+            const [showQR, setShowQR] = useState(false);
+            const [menuItems, setMenuItems] = useState([]);
+            const [currentOrder, setCurrentOrder] = useState([]);
+            const [orders, setOrders] = useState([]);
+            const [showCardModal, setShowCardModal] = useState(false);
+            const [activeTab, setActiveTab] = useState('menu');
+            const [customerName, setCustomerName] = useState('');
+            const [tableNumber, setTableNumber] = useState('');
+            const [showProductForm, setShowProductForm] = useState(false);
+            const [editingProduct, setEditingProduct] = useState(null);
+            const [productForm, setProductForm] = useState({ name: '', price: '', category: 'Lanches' });
+            const qrRef = useRef(null);
+
+            useEffect(() => {
+                const menuRef = db.ref('menu-items');
+                menuRef.on('value', (snap) => {
+                    const data = snap.val();
+                    if (data) {
+                        setMenuItems(Object.values(data));
+                    } else {
+                        const def = {
+                            1: { id: 1, name: 'X-Burger', price: 18, category: 'Lanches', available: true },
+                            2: { id: 2, name: 'X-Bacon', price: 22, category: 'Lanches', available: true },
+                            3: { id: 3, name: 'Batata Frita', price: 15, category: 'Porções', available: true },
+                            4: { id: 4, name: 'Coca-Cola', price: 6, category: 'Bebidas', available: true }
+                        };
+                        db.ref('menu-items').set(def);
+                    }
+                });
+                return () => menuRef.off();
+            }, []);
+
+            useEffect(() => {
+                if (userRole) {
+                    const ordersRef = db.ref('orders');
+                    ordersRef.on('value', (snap) => {
+                        const data = snap.val();
+                        if (data) {
+                            const arr = Object.values(data);
+                            arr.sort((a, b) => a.id - b.id);
+                            setOrders(arr);
+                        } else setOrders([]);
+                    });
+                    return () => ordersRef.off();
+                }
+            }, [userRole]);
+
+            useEffect(() => {
+                if (showQR && qrRef.current && window.QRCode) {
+                    qrRef.current.innerHTML = '';
+                    new QRCode(qrRef.current, {
+                        text: window.location.origin + '/cliente.html',
+                        width: 256,
+                        height: 256
+                    });
+                }
+            }, [showQR]);
+
+            const addToOrder = (item) => {
+                const ex = currentOrder.find(i => i.id === item.id);
+                if (ex) {
+                    setCurrentOrder(currentOrder.map(i => i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i));
+                } else {
+                    setCurrentOrder([...currentOrder, { ...item, quantity: 1 }]);
+                }
+            };
+
+            const updateQuantity = (itemId, change) => {
+                setCurrentOrder(currentOrder.map(item => {
+                    if (item.id === itemId) {
+                        const newQty = item.quantity + change;
+                        return newQty > 0 ? { ...item, quantity: newQty } : item;
+                    }
+                    return item;
+                }).filter(item => item.quantity > 0));
+            };
+
+            const removeFromOrder = (itemId) => setCurrentOrder(currentOrder.filter(item => item.id !== itemId));
+            const getTotal = () => currentOrder.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+
+            const finalizeOrder = async (paymentMethod) => {
+                if (currentOrder.length === 0) return;
+                const newOrder = {
+                    id: Date.now(),
+                    items: [...currentOrder],
+                    total: getTotal(),
+                    paymentMethod,
+                    status: 'pendente',
+                    time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+                    date: new Date().toLocaleDateString('pt-BR'),
+                    ticketNumber: Math.floor(1000 + Math.random() * 9000),
+                    customerName: customerName || 'Cliente',
+                    tableNumber: tableNumber || '-'
+                };
+                try {
+                    await db.ref('orders/' + newOrder.id).set(newOrder);
+                    setCurrentOrder([]);
+                    setCustomerName('');
+                    setTableNumber('');
+                    setShowCardModal(false);
+                    alert('Pedido #' + newOrder.ticketNumber + ' realizado!');
+                } catch (err) {
+                    alert('Erro ao salvar pedido!');
+                }
+            };
+
+            const saveProduct = async () => {
+                if (!productForm.name || !productForm.price) return alert('Preencha nome e preço!');
+                try {
+                    if (editingProduct) {
+                        await db.ref('menu-items/' + editingProduct.id).update({
+                            name: productForm.name,
+                            price: parseFloat(productForm.price),
+                            category: productForm.category
+                        });
+                    } else {
+                        const newId = Date.now();
+                        await db.ref('menu-items/' + newId).set({
+                            id: newId,
+                            name: productForm.name,
+                            price: parseFloat(productForm.price),
+                            category: productForm.category,
+                            available: true
+                        });
+                    }
+                    setShowProductForm(false);
+                    setEditingProduct(null);
+                    setProductForm({ name: '', price: '', category: 'Lanches' });
+                } catch (err) {
+                    alert('Erro ao salvar produto!');
+                }
+            };
+
+            const editProduct = (prod) => {
+                setEditingProduct(prod);
+                setProductForm({ name: prod.name, price: prod.price.toString(), category: prod.category });
+                setShowProductForm(true);
+            };
+
+            const deleteProduct = async (id) => {
+                if (!confirm('Excluir produto?')) return;
+                try {
+                    await db.ref('menu-items/' + id).remove();
+                } catch (err) {
+                    alert('Erro ao excluir!');
+                }
+            };
+
+            const toggleAvailability = async (id) => {
+                const prod = menuItems.find(p => p.id === id);
+                if (prod) {
+                    try {
+                        await db.ref('menu-items/' + id).update({ available: !prod.available });
+                    } catch (err) {
+                        console.error(err);
+                    }
+                }
+            };
+
+            const changeOrderStatus = async (orderId, newStatus) => {
+                try {
+                    await db.ref('orders/' + orderId).update({ status: newStatus });
+                    const order = orders.find(o => o.id === orderId);
+                    if (newStatus === 'pronto') alert('Pedido #' + order.ticketNumber + ' PRONTO!');
+                    else if (newStatus === 'entregue') alert('Pedido #' + order.ticketNumber + ' ENTREGUE!');
+                } catch (err) {
+                    alert('Erro ao atualizar!');
+                }
+            };
+
+            const deleteOrder = async (id) => {
+                if (!confirm('Excluir pedido?')) return;
+                try {
+                    await db.ref('orders/' + id).remove();
+                    alert('Pedido excluído!');
+                } catch (err) {
+                    alert('Erro!');
+                }
+            };
+
+            const getSalesStats = () => {
+                const today = new Date().toLocaleDateString('pt-BR');
+                const todayOrders = orders.filter(o => o.date === today);
+                const sorted = [...todayOrders].sort((a, b) => {
+                    if (a.status === 'entregue' && b.status !== 'entregue') return 1;
+                    if (a.status !== 'entregue' && b.status === 'entregue') return -1;
+                    return a.id - b.id;
+                });
+                return {
+                    totalSales: todayOrders.reduce((sum, o) => sum + o.total, 0),
+                    totalOrders: todayOrders.length,
+                    paymentMethods: {
+                        cash: todayOrders.filter(o => o.paymentMethod === 'cash').length,
+                        credit: todayOrders.filter(o => o.paymentMethod === 'credit').length,
+                        debit: todayOrders.filter(o => o.paymentMethod === 'debit').length,
+                        pix: todayOrders.filter(o => o.paymentMethod === 'pix').length
+                    },
+                    todayOrders: sorted
+                };
+            };
+
+            if (!userRole) {
+                return (
+                    <div className="min-h-screen bg-black flex items-center justify-center p-4">
+                        <div className="bg-gray-900 border-4 border-red-600 rounded-xl p-8 max-w-md w-full">
+                            <div className="text-center mb-6">
+                                <div className="text-6xl mb-2">🎸</div>
+                                <h1 className="text-5xl font-black text-red-600 mb-2">ROXX</h1>
+                                <h2 className="text-2xl font-bold text-red-500">MUSIC BAR</h2>
+                            </div>
+                            <div className="flex flex-col gap-4 mb-6">
+                                <button onClick={() => setUserRole('admin')} className="w-full bg-gradient-to-r from-red-600 to-red-800 text-white font-black py-3 rounded-lg border-2 border-red-400">
+                                    🔒 ADMINISTRADOR
+                                </button>
+                                <button onClick={() => setUserRole('cashier')} className="w-full bg-gradient-to-r from-purple-600 to-purple-800 text-white font-black py-3 rounded-lg border-2 border-purple-400">
+                                    💰 CAIXA
+                                </button>
+                            </div>
+                            <div className="border-t-2 border-gray-700 pt-6 mb-6">
+                                <p className="text-center text-gray-400 text-sm font-semibold mb-3">TELAS ESPECIAIS</p>
+                                <div className="flex flex-col gap-3">
+                                    <button onClick={() => window.open('Display_Cozinha.html', '_blank')} className="w-full bg-gradient-to-r from-orange-500 to-orange-700 text-white font-black py-3 rounded-lg">
+                                        🍳 DISPLAY COZINHA
+                                    </button>
+                                    <button onClick={() => window.open('Display_de_Pedidos.html', '_blank')} className="w-full bg-gradient-to-r from-green-500 to-green-700 text-white font-black py-3 rounded-lg">
+                                        📊 DISPLAY DE PEDIDOS
+                                    </button>
+                                </div>
+                            </div>
+                            <div className="border-t-2 border-gray-700 pt-6">
+                                <p className="text-center text-gray-400 text-sm font-semibold mb-3">ACESSO CLIENTE</p>
+                                <div className="flex flex-col gap-3">
+                                    <button onClick={() => window.open('cliente.html', '_blank')} className="w-full bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-black py-3 rounded-lg">
+                                        👤 FAZER PEDIDO
+                                    </button>
+                                    <button onClick={() => setShowQR(!showQR)} className="w-full bg-gray-800 text-white font-black py-3 rounded-lg">
+                                        📱 {showQR ? 'OCULTAR' : 'MOSTRAR'} QR CODE
+                                    </button>
+                                </div>
+                            </div>
+                            {showQR && (
+                                <div className="mt-6 bg-gray-800 p-4 rounded-lg text-center">
+                                    <h3 className="text-yellow-400 font-black mb-3">📱 QR CODE</h3>
+                                    <div className="bg-white p-3 rounded inline-block">
+                                        <div ref={qrRef}></div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                );
+            }
+
+            const stats = getSalesStats();
+
+            return (
+                <div className="min-h-screen bg-black">
+                    <div className="bg-gradient-to-r from-black via-red-900 to-black text-white p-4 border-b-4 border-red-600">
+                        <div className="max-w-7xl mx-auto flex justify-between items-center">
+                            <div>
+                                <h1 className="text-3xl font-black">🎸 ROXX MUSIC BAR</h1>
+                                <p className="text-sm">{userRole === 'admin' ? 'Administrador / Garçom' : 'Caixa'}</p>
+                            </div>
+                            <button onClick={() => { setUserRole(null); setCurrentOrder([]); setActiveTab('menu'); }} className="bg-red-600 px-4 py-2 rounded font-black">
+                                SAIR
+                            </button>
+                        </div>
+                    </div>
+
+                    {userRole === 'admin' && (
+                        <div className="bg-gray-800 border-b-2 border-gray-700">
+                            <div className="max-w-7xl mx-auto flex gap-2 p-2">
+                                <button onClick={() => setActiveTab('menu')} className={`px-4 py-2 rounded font-bold ${activeTab === 'menu' ? 'bg-red-600' : 'bg-gray-700'} text-white`}>
+                                    🍔 Fazer Pedidos
+                                </button>
+                                <button onClick={() => setActiveTab('products')} className={`px-4 py-2 rounded font-bold ${activeTab === 'products' ? 'bg-red-600' : 'bg-gray-700'} text-white`}>
+                                    📦 Gerenciar Produtos
+                                </button>
+                                <button onClick={() => setActiveTab('sales')} className={`px-4 py-2 rounded font-bold ${activeTab === 'sales' ? 'bg-red-600' : 'bg-gray-700'} text-white`}>
+                                    💰 Caixa
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="max-w-7xl mx-auto p-4">
+                        {userRole === 'admin' && activeTab === 'products' && (
+                            <div className="bg-white rounded-lg p-6">
+                                <div className="flex justify-between items-center mb-4">
+                                    <h2 className="text-2xl font-black">📦 Gerenciar Produtos</h2>
+                                    <button onClick={() => { setShowProductForm(true); setEditingProduct(null); setProductForm({ name: '', price: '', category: 'Lanches' }); }} className="bg-green-500 text-white font-black px-4 py-2 rounded">
+                                        ➕ Novo Produto
+                                    </button>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                    {menuItems.map(item => (
+                                        <div key={item.id} className={`border-2 rounded-lg p-4 ${item.available ? 'bg-gray-50' : 'bg-red-50 border-red-300'}`}>
+                                            <div className="flex justify-between mb-2">
+                                                <div>
+                                                    <div className="font-black text-lg">{item.name}</div>
+                                                    <div className="text-sm text-gray-600">{item.category}</div>
+                                                    <div className="text-orange-600 font-black text-xl">R$ {item.price.toFixed(2)}</div>
+                                                </div>
+                                                <div className="text-3xl">{item.available ? '✅' : '❌'}</div>
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <button onClick={() => editProduct(item)} className="flex-1 bg-blue-500 text-white py-1 rounded text-sm font-bold">
+                                                    ✏️ Editar
+                                                </button>
+                                                <button onClick={() => toggleAvailability(item.id)} className={`flex-1 ${item.available ? 'bg-orange-500' : 'bg-green-500'} text-white py-1 rounded text-sm font-bold`}>
+                                                    {item.available ? '🚫 Desativar' : '✅ Ativar'}
+                                                </button>
+                                                <button onClick={() => deleteProduct(item.id)} className="bg-red-500 text-white px-3 rounded text-sm font-bold">
+                                                    🗑️
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {((userRole === 'admin' && activeTab === 'sales') || userRole === 'cashier') && (
+                            <div className="bg-white rounded-lg p-6">
+                                <h2 className="text-2xl font-black mb-4">💰 Relatório - Hoje</h2>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                                    <div className="bg-gradient-to-br from-green-500 to-green-700 p-4 rounded-lg text-white">
+                                        <div className="text-sm opacity-90">Total em Vendas</div>
+                                        <div className="text-3xl font-black">R$ {stats.totalSales.toFixed(2)}</div>
+                                    </div>
+                                    <div className="bg-gradient-to-br from-blue-500 to-blue-700 p-4 rounded-lg text-white">
+                                        <div className="text-sm opacity-90">Total de Pedidos</div>
+                                        <div className="text-3xl font-black">{stats.totalOrders}</div>
+                                    </div>
+                                    <div className="bg-gradient-to-br from-purple-500 to-purple-700 p-4 rounded-lg text-white">
+                                        <div className="text-sm opacity-90">Ticket Médio</div>
+                                        <div className="text-3xl font-black">R$ {stats.totalOrders > 0 ? (stats.totalSales / stats.totalOrders).toFixed(2) : '0.00'}</div>
+                                    </div>
+                                </div>
+                                <div className="mb-6">
+                                    <h3 className="text-xl font-black mb-3">📊 Formas de Pagamento</h3>
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                        <div className="bg-green-50 border-2 border-green-300 p-3 rounded text-center">
+                                            <div className="text-2xl">💵</div>
+                                            <div className="font-bold text-green-800">Dinheiro</div>
+                                            <div className="text-2xl font-black text-green-600">{stats.paymentMethods.cash}</div>
+                                        </div>
+                                        <div className="bg-blue-50 border-2 border-blue-300 p-3 rounded text-center">
+                                            <div className="text-2xl">💳</div>
+                                            <div className="font-bold text-blue-800">Crédito</div>
+                                            <div className="text-2xl font-black text-blue-600">{stats.paymentMethods.credit}</div>
+                                        </div>
+                                        <div className="bg-teal-50 border-2 border-teal-300 p-3 rounded text-center">
+                                            <div className="text-2xl">💳</div>
+                                            <div className="font-bold text-teal-800">Débito</div>
+                                            <div className="text-2xl font-black text-teal-600">{stats.paymentMethods.debit}</div>
+                                        </div>
+                                        <div className="bg-purple-50 border-2 border-purple-300 p-3 rounded text-center">
+                                            <div className="text-2xl">📱</div>
+                                            <div className="font-bold text-purple-800">PIX</div>
+                                            <div className="text-2xl font-black text-purple-600">{stats.paymentMethods.pix}</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div>
+                                    <h3 className="text-xl font-black mb-3">📋 Pedidos de Hoje</h3>
+                                    <div className="space-y-3 max-h-96 overflow-y-auto">
+                                        {stats.todayOrders.length === 0 ? (
+                                            <div className="text-center py-12 text-gray-400">
+                                                <div className="text-6xl mb-3">📊</div>
+                                                <p>Nenhum pedido hoje</p>
+                                            </div>
+                                        ) : (
+                                            stats.todayOrders.map(order => (
+                                                <div key={order.id} className="bg-gray-50 border-2 rounded-lg p-4">
+                                                    <div className="flex justify-between items-start">
+                                                        <div>
+                                                            <div className="text-2xl font-black text-orange-600">#{order.ticketNumber}</div>
+                                                            <div className="text-sm text-gray-600">🕐 {order.time} | 🪑 Mesa: {order.tableNumber} | 👤 {order.customerName}</div>
+                                                            <div className="mt-2 text-sm">
+                                                                {order.items.map((item, idx) => (
+                                                                    <div key={idx}><span className="font-semibold">{item.quantity}x</span> {item.name}</div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                        <div className="text-right">
+                                                            <div className="text-2xl font-black text-green-600">R$ {order.total.toFixed(2)}</div>
+                                                            <div className="text-xs text-gray-600 mt-1">
+                                                                {order.paymentMethod === 'cash' && '💵 Dinheiro'}
+                                                                {order.paymentMethod === 'credit' && '💳 Crédito'}
+                                                                {order.paymentMethod === 'debit' && '💳 Débito'}
+                                                                {order.paymentMethod === 'pix' && '📱 PIX'}
+                                                            </div>
+                                                            <div className={`mt-2 px-2 py-1 rounded text-xs font-bold ${order.status === 'entregue' ? 'bg-green-200 text-green-800' : order.status === 'pronto' ? 'bg-yellow-200 text-yellow-800' : order.status === 'em preparo' ? 'bg-blue-200 text-blue-800' : 'bg-red-200 text-red-800'}`}>
+                                                                {order.status === 'pendente' && '⏳ Pendente'}
+                                                                {order.status === 'em preparo' && '🔥 Em Preparo'}
+                                                                {order.status === 'pronto' && '✅ Pronto'}
+                                                                {order.status === 'entregue' && '✔️ Entregue'}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    {userRole === 'admin' && (
+                                                        <div className="flex gap-2 mt-3 pt-3 border-t">
+                                                            {order.status === 'pendente' && (
+                                                                <button onClick={() => changeOrderStatus(order.id, 'pronto')} className="flex-1 bg-green-500 text-white font-bold py-2 rounded text-sm">
+                                                                    ✅ Marcar como Pronto
+                                                                </button>
+                                                            )}
+                                                            {order.status === 'pronto' && (
+                                                                <button onClick={() => changeOrderStatus(order.id, 'entregue')} className="flex-1 bg-blue-500 text-white font-bold py-2 rounded text-sm">
+                                                                    ✔️ Marcar como Entregue
+                                                                </button>
+                                                            )}
+                                                            {order.status !== 'entregue' && (
+                                                                <button onClick={() => deleteOrder(order.id)} className="bg-red-500 text-white font-bold px-4 rounded text-sm">
+                                                                    🗑️
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {userRole === 'admin' && activeTab === 'menu' && (
+                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                                <div className="lg:col-span-2 bg-white rounded-lg p-4">
+                                    <h2 className="text-2xl font-black mb-4">🍔 Cardápio</h2>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                        {menuItems.filter(item => item.available).map(item => (
+                                            <button key={item.id} onClick={() => addToOrder(item)} className="border-4 border-orange-200 rounded-lg p-4 text-left bg-gradient-to-br from-orange-50 to-red-50 hover:shadow-lg transition">
+                                                <div className="font-black text-lg">{item.name}</div>
+                                                <div className="text-orange-600 font-black text-xl">R$ {item.price.toFixed(2)}</div>
+                                                <div className="text-xs text-gray-500">{item.category}</div>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div className="bg-white rounded-lg p-4 h-fit sticky top-4">
+                                    <h2 className="text-xl font-black mb-4">🛒 Pedido Atual</h2>
+                                    <div className="mb-4">
+                                        <input type="text" placeholder="Nome do Cliente" value={customerName} onChange={(e) => setCustomerName(e.target.value)} className="w-full p-2 mb-2 border rounded" />
+                                        <input type="text" placeholder="Número da Mesa" value={tableNumber} onChange={(e) => setTableNumber(e.target.value)} className="w-full p-2 border rounded" />
+                                    </div>
+                                    {currentOrder.length === 0 ? (
+                                        <div className="text-center text-gray-400 py-8">
+                                            <div className="text-5xl mb-2">🛒</div>
+                                            <p>Carrinho vazio</p>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <div className="space-y-2 mb-4 max-h-64 overflow-y-auto">
+                                                {currentOrder.map(item => (
+                                                    <div key={item.id} className="flex justify-between items-center bg-gray-50 p-3 rounded">
+                                                        <div>
+                                                            <div className="font-semibold text-sm">{item.name}</div>
+                                                            <div className="text-orange-600 font-bold">R$ {(item.price * item.quantity).toFixed(2)}</div>
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                            <button onClick={() => updateQuantity(item.id, -1)} className="bg-gray-300 w-7 h-7 rounded font-bold">-</button>
+                                                            <span className="font-bold w-6 text-center">{item.quantity}</span>
+                                                            <button onClick={() => updateQuantity(item.id, 1)} className="bg-gray-300 w-7 h-7 rounded font-bold">+</button>
+                                                            <button onClick={() => removeFromOrder(item.id)} className="text-red-500 ml-2">🗑️</button>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                            <div className="border-t pt-4">
+                                                <div className="flex justify-between items-center mb-4">
+                                                    <span className="font-semibold">Total:</span>
+                                                    <span className="text-2xl font-black text-orange-600">R$ {getTotal().toFixed(2)}</span>
+                                                </div>
+                                                <div className="flex flex-col gap-2">
+                                                    <button onClick={() => finalizeOrder('cash')} className="w-full bg-green-500 text-white font-black py-2 rounded">
+                                                        💵 Dinheiro
+                                                    </button>
+                                                    <button onClick={() => setShowCardModal(true)} className="w-full bg-blue-500 text-white font-black py-2 rounded">
+                                                        💳 Cartão
+                                                    </button>
+                                                    <button onClick={() => finalizeOrder('pix')} className="w-full bg-purple-500 text-white font-black py-2 rounded">
+                                                        📱 PIX
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {showProductForm && (
+                        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+                            <div className="bg-white rounded-xl p-6 max-w-md w-full">
+                                <h2 className="text-2xl font-black mb-4">{editingProduct ? '✏️ Editar' : '➕ Novo'} Produto</h2>
+                                <div className="mb-4">
+                                    <label className="block mb-2 font-semibold">Nome</label>
+                                    <input type="text" value={productForm.name} onChange={(e) => setProductForm({...productForm, name: e.target.value})} className="w-full p-2 border-2 rounded" placeholder="Ex: X-Burger" />
+                                </div>
+                                <div className="mb-4">
+                                    <label className="block mb-2 font-semibold">Preço (R$)</label>
+                                    <input type="number" step="0.01" value={productForm.price} onChange={(e) => setProductForm({...productForm, price: e.target.value})} className="w-full p-2 border-2 rounded" placeholder="0.00" />
+                                </div>
+                                <div className="mb-6">
+                                    <label className="block mb-2 font-semibold">Categoria</label>
+                                    <select value={productForm.category} onChange={(e) => setProductForm({...productForm, category: e.target.value})} className="w-full p-2 border-2 rounded">
+                                        <option value="Lanches">Lanches</option>
+                                        <option value="Porções">Porções</option>
+                                        <option value="Bebidas">Bebidas</option>
+                                        <option value="Sobremesas">Sobremesas</option>
+                                        <option value="Outros">Outros</option>
+                                    </select>
+                                </div>
+                                <div className="flex gap-3">
+                                    <button onClick={saveProduct} className="flex-1 bg-green-500 text-white font-black py-3 rounded">✅ Salvar</button>
+                                    <button onClick={() => { setShowProductForm(false); setEditingProduct(null); setProductForm({ name: '', price: '', category: 'Lanches' }); }} className="flex-1 bg-gray-500 text-white font-black py-3 rounded">❌ Cancelar</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {showCardModal && (
+                        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+                            <div className="bg-white rounded-xl p-6 max-w-md w-full text-center">
+                                <div className="text-5xl mb-4">💳</div>
+                                <h2 className="text-2xl font-black mb-4">Tipo de Cartão</h2>
+                                <div className="flex flex-col gap-3">
+                                    <button onClick={() => finalizeOrder('credit')} className="w-full bg-gradient-to-r from-blue-500 to-blue-700 text-white font-black py-4 rounded text-xl">
+                                        💳 CRÉDITO
+                                    </button>
+                                    <button onClick={() => finalizeOrder('debit')} className="w-full bg-gradient-to-r from-green-500 to-green-700 text-white font-black py-4 rounded text-xl">
+                                        💳 DÉBITO
+                                    </button>
+                                    <button onClick={() => setShowCardModal(false)} className="w-full bg-gray-300 text-gray-800 font-bold py-2 rounded mt-2">
+                                        Cancelar
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
