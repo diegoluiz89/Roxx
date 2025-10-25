@@ -1,0 +1,46 @@
+# Configuração do Netlify para ROXX Music Bar
+
+[build]
+  # Não precisa de build, é HTML puro
+  publish = "."
+  command = "echo 'Deploy direto dos arquivos HTML'"
+
+[[redirects]]
+  # Redireciona a raiz para cliente.html (PÁGINA PRINCIPAL)
+  from = "/"
+  to = "/cliente.html"
+  status = 200
+  force = true
+
+[[redirects]]
+  # Redireciona /admin para index.html
+  from = "/admin"
+  to = "/index.html"
+  status = 200
+
+[[redirects]]
+  # Redireciona /cozinha para Display_Cozinha.html
+  from = "/cozinha"
+  to = "/Display_Cozinha.html"
+  status = 200
+
+[[redirects]]
+  # Redireciona /pedidos para Display_de_Pedidos.html
+  from = "/pedidos"
+  to = "/Display_de_Pedidos.html"
+  status = 200
+
+[[headers]]
+  # Aplicar headers de segurança
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "geolocation=(), microphone=(), camera=()"
+
+[[headers]]
+  # Headers para os arquivos HTML
+  for = "/*.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"

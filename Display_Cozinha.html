@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ROXX Music Bar - Cozinha</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: black;
+        }
+        @keyframes slideIn {
+            from { transform: translateX(-100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        .slide-in { animation: slideIn 0.5s ease-out; }
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+        .animate-bounce-custom { animation: bounce 2s infinite; }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+        .animate-pulse-custom { animation: pulse 2s infinite; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        window.storage = {
+            async get(key, shared = false) {
+                try {
+                    const storageKey = shared ? `shared_${key}` : `local_${key}`;
+                    const value = localStorage.getItem(storageKey);
+                    if (!value) return null;
+                    return { key, value, shared };
+                } catch (error) {
+                    console.error('Storage error:', error);
+                    return null;
+                }
+            },
+            async set(key, value, shared = false) {
+                try {
+                    const storageKey = shared ? `shared_${key}` : `local_${key}`;
+                    localStorage.setItem(storageKey, value);
+                    return { key, value, shared };
+                } catch (error) {
+                    console.error('Storage error:', error);
+                    return null;
+                }
+            }
+        };
+
+        const App = () => {
+            const [orders, setOrders] = useState([]);
+            const [currentTime, setCurrentTime] = useState(new Date());
+
+            useEffect(() => {
+                loadOrders();
+                const interval = setInterval(() => {
+                    loadOrders();
+                    setCurrentTime(new Date());
+                }, 3000);
+
+                return () => clearInterval(interval);
+            }, []);
+
+            const loadOrders = async () => {
+                try {
+                    const result = await window.storage.get('orders', true);
+                    if (result) {
+                        const allOrders = JSON.parse(result.value);
+                        const activeOrders = allOrders.filter(
+                            order => order.status === 'pendente' || order.status === 'em preparo' || order.status === 'pronto'
+                        );
+                        // Ordena por ID (mais antigos primeiro - FIFO)
+                        activeOrders.sort((a, b) => a.id - b.id);
+                        setOrders(activeOrders);
+                    }
+                } catch (error) {
+                    console.log('Erro ao carregar pedidos');
+                }
+            };
+
+            const changeOrderStatus = async (orderId, newStatus) => {
+                try {
+                    const result = await window.storage.get('orders', true);
+                    if (result) {
+                        const allOrders = JSON.parse(result.value);
+                        const updatedOrders = allOrders.map(order =>
+                            order.id === orderId ? { ...order, status: newStatus } : order
+                        );
+                        await window.storage.set('orders', JSON.stringify(updatedOrders), true);
+                        loadOrders();
+                    }
+                } catch (error) {
+                    console.log('Erro ao atualizar pedido');
+                }
+            };
+
+            const pendingOrders = orders.filter(o => o.status === 'pendente');
+            const preparingOrders = orders.filter(o => o.status === 'em preparo');
+            const readyOrders = orders.filter(o => o.status === 'pronto');
+
+            return (
+                <div className="min-h-screen bg-black text-white">
+                    {/* Header */}
+                    <div className="bg-gradient-to-r from-red-900 via-black to-red-900 border-b-4 border-yellow-500 p-6 sticky top-0 z-10">
+                        <div className="max-w-7xl mx-auto">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                    <span className="text-6xl animate-bounce-custom">🍳</span>
+                                    <div>
+                                        <h1 className="text-5xl font-black text-white">ROXX MUSIC BAR</h1>
+                                        <p className="text-yellow-400 font-bold text-xl">⚡ COZINHA ⚡</p>
+                                    </div>
+                                </div>
+                                <div className="text-right">
+                                    <div className="text-4xl font-black text-yellow-400">
+                                        {currentTime.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                                    </div>
+                                    <div className="text-sm text-gray-300">
+                                        {currentTime.toLocaleDateString('pt-BR')}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="max-w-7xl mx-auto p-6">
+                        {/* Grid com 3 colunas */}
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                            {/* Novos Pedidos */}
+                            <div className="bg-gradient-to-br from-red-900/50 to-orange-900/50 rounded-xl p-6 border-4 border-red-500">
+                                <h2 className="text-3xl font-black mb-4 flex items-center gap-2">
+                                    <span className="text-4xl">🔔</span>
+                                    NOVOS ({pendingOrders.length})
+                                </h2>
+                                <div className="space-y-3 max-h-[700px] overflow-y-auto">
+                                    {pendingOrders.length === 0 ? (
+                                        <div className="text-center text-gray-400 py-8">
+                                            <div className="text-5xl mb-2">✅</div>
+                                            <p className="font-bold">Nenhum pedido novo</p>
+                                        </div>
+                                    ) : (
+                                        pendingOrders.map(order => (
+                                            <div key={order.id} className="bg-gradient-to-r from-red-100 to-orange-100 rounded-lg p-4 border-3 border-red-400 slide-in">
+                                                <div className="mb-2">
+                                                    <div className="text-4xl font-black text-red-600">
+                                                        #{order.ticketNumber}
+                                                    </div>
+                                                    <div className="text-gray-800 font-bold text-sm">
+                                                        🪑 Mesa: {order.tableNumber} | 👤 {order.customerName}
+                                                    </div>
+                                                    <div className="text-xs text-gray-600">
+                                                        🕐 {order.time}
+                                                    </div>
+                                                </div>
+                                                <div className="border-t-2 border-red-300 pt-2 mt-2 mb-3">
+                                                    {order.items.map((item, idx) => (
+                                                        <div key={idx} className="text-sm text-gray-700 mb-1 font-bold">
+                                                            • {item.quantity}x {item.name}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                                <button
+                                                    onClick={() => changeOrderStatus(order.id, 'em preparo')}
+                                                    className="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-black py-3 rounded-lg transition-all shadow-lg"
+                                                >
+                                                    🔥 INICIAR PREPARO
+                                                </button>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Em Preparo */}
+                            <div className="bg-gradient-to-br from-blue-900/50 to-cyan-900/50 rounded-xl p-6 border-4 border-blue-500">
+                                <h2 className="text-3xl font-black mb-4 flex items-center gap-2">
+                                    <span className="text-4xl">🔥</span>
+                                    EM PREPARO ({preparingOrders.length})
+                                </h2>
+                                <div className="space-y-3 max-h-[700px] overflow-y-auto">
+                                    {preparingOrders.length === 0 ? (
+                                        <div className="text-center text-gray-400 py-8">
+                                            <div className="text-5xl mb-2">😴</div>
+                                            <p className="font-bold">Nenhum pedido em preparo</p>
+                                        </div>
+                                    ) : (
+                                        preparingOrders.map(order => (
+                                            <div key={order.id} className="bg-gradient-to-r from-blue-100 to-cyan-100 rounded-lg p-4 border-3 border-blue-400 slide-in">
+                                                <div className="mb-2">
+                                                    <div className="text-4xl font-black text-blue-600">
+                                                        #{order.ticketNumber}
+                                                    </div>
+                                                    <div className="text-gray-800 font-bold text-sm">
+                                                        🪑 Mesa: {order.tableNumber} | 👤 {order.customerName}
+                                                    </div>
+                                                    <div className="text-xs text-gray-600">
+                                                        🕐 {order.time}
+                                                    </div>
+                                                </div>
+                                                <div className="border-t-2 border-blue-300 pt-2 mt-2 mb-3">
+                                                    {order.items.map((item, idx) => (
+                                                        <div key={idx} className="text-sm text-gray-700 mb-1 font-bold">
+                                                            • {item.quantity}x {item.name}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                                <button
+                                                    onClick={() => changeOrderStatus(order.id, 'pronto')}
+                                                    className="w-full bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-black py-3 rounded-lg transition-all shadow-lg"
+                                                >
+                                                    ✅ MARCAR COMO PRONTO
+                                                </button>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Prontos */}
+                            <div className="bg-gradient-to-br from-green-900/50 to-teal-900/50 rounded-xl p-6 border-4 border-green-500">
+                                <h2 className="text-3xl font-black mb-4 flex items-center gap-2">
+                                    <span className="text-4xl">✅</span>
+                                    PRONTOS ({readyOrders.length})
+                                </h2>
+                                <div className="space-y-3 max-h-[700px] overflow-y-auto">
+                                    {readyOrders.length === 0 ? (
+                                        <div className="text-center text-gray-400 py-8">
+                                            <div className="text-5xl mb-2">📋</div>
+                                            <p className="font-bold">Nenhum pedido pronto</p>
+                                        </div>
+                                    ) : (
+                                        readyOrders.map(order => (
+                                            <div key={order.id} className="bg-gradient-to-r from-green-100 to-teal-100 rounded-lg p-4 border-3 border-green-400 slide-in">
+                                                <div className="mb-2">
+                                                    <div className="text-4xl font-black text-green-600">
+                                                        #{order.ticketNumber}
+                                                    </div>
+                                                    <div className="text-gray-800 font-bold text-sm">
+                                                        🪑 Mesa: {order.tableNumber} | 👤 {order.customerName}
+                                                    </div>
+                                                    <div className="text-xs text-gray-600">
+                                                        🕐 {order.time}
+                                                    </div>
+                                                </div>
+                                                <div className="border-t-2 border-green-300 pt-2 mt-2">
+                                                    {order.items.map((item, idx) => (
+                                                        <div key={idx} className="text-sm text-gray-700 mb-1 font-bold">
+                                                            • {item.quantity}x {item.name}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                                <div className="mt-3 bg-green-200 border-2 border-green-500 rounded-lg p-2 text-center">
+                                                    <p className="text-green-800 font-black text-sm">
+                                                        📢 AGUARDANDO RETIRADA
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Mensagem quando não há pedidos */}
+                        {orders.length === 0 && (
+                            <div className="text-center py-20">
+                                <div className="text-9xl mb-6">🍳</div>
+                                <h2 className="text-5xl font-black text-gray-400 mb-4">
+                                    Aguardando Pedidos...
+                                </h2>
+                                <p className="text-2xl text-gray-500">
+                                    A tela será atualizada automaticamente
+                                </p>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Footer */}
+                    <div className="bg-gradient-to-r from-red-900 via-black to-red-900 border-t-4 border-yellow-500 p-4 mt-8">
+                        <div className="text-center">
+                            <p className="text-yellow-400 font-bold text-lg">
+                                🍳 ROXX MUSIC BAR - Cozinha ⚡
+                            </p>
+                            <p className="text-gray-400 text-sm">
+                                Atualização automática a cada 3 segundos
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
