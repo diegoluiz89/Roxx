@@ -4,17 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ROXX Music Bar - Cozinha</title>
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
     <style>
-        body {
-            margin: 0;
-            padding: 0;
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            background: black;
-        }
+        body { margin: 0; padding: 0; font-family: 'Inter', sans-serif; background: black; }
         @keyframes slideIn {
             from { transform: translateX(-100%); opacity: 0; }
             to { transform: translateX(0); opacity: 1; }
@@ -25,87 +22,60 @@
             50% { transform: translateY(-10px); }
         }
         .animate-bounce-custom { animation: bounce 2s infinite; }
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.6; }
-        }
-        .animate-pulse-custom { animation: pulse 2s infinite; }
     </style>
 </head>
 <body>
     <div id="root"></div>
-
     <script type="text/babel">
         const { useState, useEffect } = React;
 
-        window.storage = {
-            async get(key, shared = false) {
-                try {
-                    const storageKey = shared ? `shared_${key}` : `local_${key}`;
-                    const value = localStorage.getItem(storageKey);
-                    if (!value) return null;
-                    return { key, value, shared };
-                } catch (error) {
-                    console.error('Storage error:', error);
-                    return null;
-                }
-            },
-            async set(key, value, shared = false) {
-                try {
-                    const storageKey = shared ? `shared_${key}` : `local_${key}`;
-                    localStorage.setItem(storageKey, value);
-                    return { key, value, shared };
-                } catch (error) {
-                    console.error('Storage error:', error);
-                    return null;
-                }
-            }
+        // 🔥 FIREBASE CONFIG - SUBSTITUA COM SUAS CREDENCIAIS
+        const firebaseConfig = {
+            apiKey: "AIzaSyB58M_OFgdEbsOr8u-fmw_H6Ws06o8pTkc",
+            authDomain: "roxx-music-bar.firebaseapp.com",
+            databaseURL: "https://roxx-music-bar-default-rtdb.firebaseio.com",
+            projectId: "roxx-music-bar",
+            storageBucket: "roxx-music-bar.firebasestorage.app",
+            messagingSenderId: "827420236227",
+            appId: "1:827420236227:web:940dd63b8893e75d2e8576"
         };
+
+        if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
 
         const App = () => {
             const [orders, setOrders] = useState([]);
             const [currentTime, setCurrentTime] = useState(new Date());
 
             useEffect(() => {
-                loadOrders();
-                const interval = setInterval(() => {
-                    loadOrders();
-                    setCurrentTime(new Date());
-                }, 3000);
-
-                return () => clearInterval(interval);
-            }, []);
-
-            const loadOrders = async () => {
-                try {
-                    const result = await window.storage.get('orders', true);
-                    if (result) {
-                        const allOrders = JSON.parse(result.value);
-                        const activeOrders = allOrders.filter(
+                // 🔥 Escuta pedidos em tempo real
+                const ordersRef = db.ref('orders');
+                ordersRef.on('value', (snapshot) => {
+                    const data = snapshot.val();
+                    if (data) {
+                        const activeOrders = Object.values(data).filter(
                             order => order.status === 'pendente' || order.status === 'em preparo' || order.status === 'pronto'
                         );
-                        // Ordena por ID (mais antigos primeiro - FIFO)
                         activeOrders.sort((a, b) => a.id - b.id);
                         setOrders(activeOrders);
+                    } else {
+                        setOrders([]);
                     }
-                } catch (error) {
-                    console.log('Erro ao carregar pedidos');
-                }
-            };
+                });
+
+                const timeInterval = setInterval(() => setCurrentTime(new Date()), 1000);
+
+                return () => {
+                    ordersRef.off();
+                    clearInterval(timeInterval);
+                };
+            }, []);
 
             const changeOrderStatus = async (orderId, newStatus) => {
                 try {
-                    const result = await window.storage.get('orders', true);
-                    if (result) {
-                        const allOrders = JSON.parse(result.value);
-                        const updatedOrders = allOrders.map(order =>
-                            order.id === orderId ? { ...order, status: newStatus } : order
-                        );
-                        await window.storage.set('orders', JSON.stringify(updatedOrders), true);
-                        loadOrders();
-                    }
+                    await db.ref('orders/' + orderId).update({ status: newStatus });
                 } catch (error) {
-                    console.log('Erro ao atualizar pedido');
+                    console.error('Erro ao atualizar status:', error);
                 }
             };
 
@@ -115,7 +85,6 @@
 
             return (
                 <div className="min-h-screen bg-black text-white">
-                    {/* Header */}
                     <div className="bg-gradient-to-r from-red-900 via-black to-red-900 border-b-4 border-yellow-500 p-6 sticky top-0 z-10">
                         <div className="max-w-7xl mx-auto">
                             <div className="flex items-center justify-between">
@@ -139,7 +108,6 @@
                     </div>
 
                     <div className="max-w-7xl mx-auto p-6">
-                        {/* Grid com 3 colunas */}
                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                             {/* Novos Pedidos */}
                             <div className="bg-gradient-to-br from-red-900/50 to-orange-900/50 rounded-xl p-6 border-4 border-red-500">
@@ -276,7 +244,6 @@
                             </div>
                         </div>
 
-                        {/* Mensagem quando não há pedidos */}
                         {orders.length === 0 && (
                             <div className="text-center py-20">
                                 <div className="text-9xl mb-6">🍳</div>
@@ -290,14 +257,13 @@
                         )}
                     </div>
 
-                    {/* Footer */}
                     <div className="bg-gradient-to-r from-red-900 via-black to-red-900 border-t-4 border-yellow-500 p-4 mt-8">
                         <div className="text-center">
                             <p className="text-yellow-400 font-bold text-lg">
                                 🍳 ROXX MUSIC BAR - Cozinha ⚡
                             </p>
                             <p className="text-gray-400 text-sm">
-                                Atualização automática a cada 3 segundos
+                                Atualização automática em tempo real com Firebase
                             </p>
                         </div>
                     </div>

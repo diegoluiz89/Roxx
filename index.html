@@ -8,6 +8,11 @@
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+    
     <style>
         body {
             margin: 0;
@@ -53,29 +58,23 @@
     <script type="text/babel">
         const { useState, useEffect } = React;
 
-        window.storage = {
-            async get(key, shared = false) {
-                try {
-                    const storageKey = shared ? `shared_${key}` : `local_${key}`;
-                    const value = localStorage.getItem(storageKey);
-                    if (!value) return null;
-                    return { key, value, shared };
-                } catch (error) {
-                    console.error('Storage error:', error);
-                    return null;
-                }
-            },
-            async set(key, value, shared = false) {
-                try {
-                    const storageKey = shared ? `shared_${key}` : `local_${key}`;
-                    localStorage.setItem(storageKey, value);
-                    return { key, value, shared };
-                } catch (error) {
-                    console.error('Storage error:', error);
-                    return null;
-                }
-            }
+        // 🔥 CONFIGURAÇÃO DO FIREBASE - SUBSTITUA COM SUAS CREDENCIAIS!
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyB58M_OFgdEbsOr8u-fmw_H6Ws06o8pTkc",
+            authDomain: "roxx-music-bar.firebaseapp.com",
+            databaseURL: "https://roxx-music-bar-default-rtdb.firebaseio.com",
+            projectId: "roxx-music-bar",
+            storageBucket: "roxx-music-bar.firebasestorage.app",
+            messagingSenderId: "827420236227",
+            appId: "1:827420236227:web:940dd63b8893e75d2e8576"
         };
+        
+        // Inicializa Firebase
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        const database = firebase.database();
 
         const Icons = {
             ShoppingCart: (props) => (
@@ -105,7 +104,6 @@
         const App = () => {
             const [menuItems, setMenuItems] = useState([]);
             const [currentOrder, setCurrentOrder] = useState([]);
-            const [orders, setOrders] = useState([]);
             const [selectedCategory, setSelectedCategory] = useState('todos');
             const [tableNumber, setTableNumber] = useState('');
             const [customerName, setCustomerName] = useState('');
@@ -115,27 +113,18 @@
             const [tableError, setTableError] = useState(false);
 
             useEffect(() => {
-                loadData();
-                const interval = setInterval(loadData, 3000);
-                return () => clearInterval(interval);
+                // 🔥 Escuta mudanças no menu em tempo real
+                const menuRef = database.ref('menu-items');
+                menuRef.on('value', (snapshot) => {
+                    const data = snapshot.val();
+                    if (data) {
+                        const items = Object.values(data).filter(item => item.available);
+                        setMenuItems(items);
+                    }
+                });
+
+                return () => menuRef.off();
             }, []);
-
-            const loadData = async () => {
-                try {
-                    const menuResult = await window.storage.get('menu-items', true);
-                    if (menuResult) {
-                        const items = JSON.parse(menuResult.value);
-                        setMenuItems(items.filter(item => item.available));
-                    }
-
-                    const ordersResult = await window.storage.get('orders', true);
-                    if (ordersResult) {
-                        setOrders(JSON.parse(ordersResult.value));
-                    }
-                } catch (error) {
-                    console.log('Erro ao carregar dados');
-                }
-            };
 
             const categories = ['todos', ...new Set(menuItems.map(item => item.category))];
             const filteredItems = menuItems.filter(item => 
@@ -172,28 +161,24 @@
             };
 
             const finalizeOrder = async () => {
-                // Reset errors
                 setNameError(false);
                 setTableError(false);
 
-                // Validações
                 if (currentOrder.length === 0) {
-                    alert('❌ Adicione itens ao pedido!');
+                    alert('⚠️ Adicione itens ao pedido!');
                     return;
                 }
                 
                 if (!customerName || customerName.trim() === '') {
                     setNameError(true);
-                    alert('❌ Por favor, preencha seu NOME!');
-                    // Scroll para o topo para ver o campo
+                    alert('⚠️ Por favor, preencha seu NOME!');
                     window.scrollTo({ top: 0, behavior: 'smooth' });
                     return;
                 }
 
                 if (!tableNumber || tableNumber.trim() === '') {
                     setTableError(true);
-                    alert('❌ Por favor, preencha o NÚMERO DA MESA!');
-                    // Scroll para o topo para ver o campo
+                    alert('⚠️ Por favor, preencha o NÚMERO DA MESA!');
                     window.scrollTo({ top: 0, behavior: 'smooth' });
                     return;
                 }
@@ -211,20 +196,24 @@
                     ticketNumber: Math.floor(1000 + Math.random() * 9000)
                 };
 
-                const newOrders = [newOrder, ...orders];
-                setOrders(newOrders);
-                await window.storage.set('orders', JSON.stringify(newOrders), true);
-                
-                setOrderTicket(newOrder);
-                setShowSuccess(true);
-                setCurrentOrder([]);
-                
-                setTimeout(() => {
-                    setShowSuccess(false);
-                    setOrderTicket(null);
-                    setTableNumber('');
-                    setCustomerName('');
-                }, 15000);
+                try {
+                    // 🔥 Salva o pedido no Firebase
+                    await database.ref('orders/' + newOrder.id).set(newOrder);
+                    
+                    setOrderTicket(newOrder);
+                    setShowSuccess(true);
+                    setCurrentOrder([]);
+                    
+                    setTimeout(() => {
+                        setShowSuccess(false);
+                        setOrderTicket(null);
+                        setTableNumber('');
+                        setCustomerName('');
+                    }, 15000);
+                } catch (error) {
+                    console.error('Erro ao enviar pedido:', error);
+                    alert('❌ Erro ao enviar pedido. Tente novamente!');
+                }
             };
 
             return (
